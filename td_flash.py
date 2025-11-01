@@ -893,20 +893,32 @@ def main(batch_size, seq_len, num_heads, dim, dtype=torch.bfloat16):
 
     o_diff = (ref - out).abs().mean().item()
     ic(o_diff)
+    ic(ref[0, 0, 0, :8])
+    ic(out[0, 0, 0, :8])
 
     dq_diff = (dq_ref - dq_out).abs().mean().item()
     ic(dq_diff)
+    ic(dq_ref[0, 0, 0, :8])
+    ic(dq_out[0, 0, 0, :8])
 
     dk_diff = (dk_ref - dk_out).abs().mean().item()
     ic(dk_diff)
+    ic(dk_ref[0, 0, 0, :8])
+    ic(dk_out[0, 0, 0, :8])
 
     dv_diff = (dv_ref - dv_out).abs().mean().item()
     ic(dv_diff)
+    ic(dk_ref[0, 0, 0, :8])
+    ic(dk_out[0, 0, 0, :8])
 
     print("==========\n\n\n")
 
 
 if __name__ == "__main__":
-    main(batch_size=2, seq_len=1077, num_heads=8, dim=64, dtype=torch.bfloat16)
-    main(batch_size=2, seq_len=1077, num_heads=8, dim=64, dtype=torch.float16)
-    main(batch_size=2, seq_len=1077, num_heads=8, dim=64, dtype=torch.float32)
+    # main(batch_size=2, seq_len=1024, num_heads=8, dim=64, dtype=torch.bfloat16)
+    # main(batch_size=2, seq_len=1024, num_heads=8, dim=64, dtype=torch.float16)
+    # main(batch_size=2, seq_len=1024, num_heads=8, dim=64, dtype=torch.float32)
+
+    main(batch_size=2, seq_len=1024, num_heads=8, dim=64, dtype=torch.float32)
+    main(batch_size=2, seq_len=2048, num_heads=8, dim=64, dtype=torch.float32)
+    main(batch_size=2, seq_len=4101, num_heads=8, dim=64, dtype=torch.float32)
