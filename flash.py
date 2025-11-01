@@ -97,7 +97,7 @@ def flash_attn_fwd_kernel(
     CAUSAL: tl.constexpr,
     BLOCK_SIZE_M: tl.constexpr,
     BLOCK_SIZE_N: tl.constexpr,
-    BLOCK_SIZE_D: tl.constexpr,
+    HEAD_DIM: tl.constexpr,
 ):
     start_m = tl.program_id(0) * BLOCK_SIZE_M
     off_h = tl.program_id(1) % num_heads
@@ -106,7 +106,7 @@ def flash_attn_fwd_kernel(
     # Initialize offsets
     offs_m = start_m + tl.arange(0, BLOCK_SIZE_M)
     offs_n = tl.arange(0, BLOCK_SIZE_N)
-    offs_d = tl.arange(0, BLOCK_SIZE_D)
+    offs_d = tl.arange(0, HEAD_DIM)
     mask_m = offs_m < seq_len
     q_ptrs = (
         q_ptr
@@ -141,7 +141,7 @@ def flash_attn_fwd_kernel(
     # Initialize row_max (M) and sum_exp (L)
     m = tl.zeros([BLOCK_SIZE_M], dtype=tl.float32) - float("inf")
     l = tl.zeros([BLOCK_SIZE_M], dtype=tl.float32)
-    o = tl.zeros([BLOCK_SIZE_M, BLOCK_SIZE_D], dtype=tl.float32)
+    o = tl.zeros([BLOCK_SIZE_M, HEAD_DIM], dtype=tl.float32)
 
     # Scale sm_scale by log_2(e) and use 2^x instead of exp
     sm_scale = sm_scale * 1.4426950408889634
@@ -323,7 +323,7 @@ def flash_attn_bwd_kernel(
     CAUSAL: tl.constexpr,
     BLOCK_SIZE_M: tl.constexpr,
     BLOCK_SIZE_N: tl.constexpr,
-    BLOCK_SIZE_D: tl.constexpr,
+    HEAD_DIM: tl.constexpr,
     SKIP_DQ: tl.constexpr,
 ):
     start_n = tl.program_id(0) * BLOCK_SIZE_N
@@ -333,7 +333,7 @@ def flash_attn_bwd_kernel(
     # Initialize offsets
     offs_m = tl.arange(0, BLOCK_SIZE_M)
     offs_n = start_n + tl.arange(0, BLOCK_SIZE_N)
-    offs_d = tl.arange(0, BLOCK_SIZE_D)
+    offs_d = tl.arange(0, HEAD_DIM)
     mask_n = offs_n < seq_len
     q_ptrs = (
         q_ptr
@@ -388,8 +388,8 @@ def flash_attn_bwd_kernel(
     delta_ptrs = delta_ptr + off_b * stride_db + off_h * stride_dh + offs_m * stride_dm
 
     # Initialize dK and dV
-    dk = tl.zeros([BLOCK_SIZE_N, BLOCK_SIZE_D], dtype=tl.float32)
-    dv = tl.zeros([BLOCK_SIZE_N, BLOCK_SIZE_D], dtype=tl.float32)
+    dk = tl.zeros([BLOCK_SIZE_N, HEAD_DIM], dtype=tl.float32)
+    dv = tl.zeros([BLOCK_SIZE_N, HEAD_DIM], dtype=tl.float32)
 
     # Load K and V
     k = tl.load(k_ptrs, mask=mask_n[:, None], other=0.0)
@@ -581,7 +581,7 @@ def flash_attn_bwd_dq_kernel(
     CAUSAL: tl.constexpr,
     BLOCK_SIZE_M: tl.constexpr,
     BLOCK_SIZE_N: tl.constexpr,
-    BLOCK_SIZE_D: tl.constexpr,
+    HEAD_DIM: tl.constexpr,
 ):
     start_m = tl.program_id(0) * BLOCK_SIZE_M
     off_h = tl.program_id(1) % num_heads
@@ -590,7 +590,7 @@ def flash_attn_bwd_dq_kernel(
     # Initialize offsets
     offs_m = start_m + tl.arange(0, BLOCK_SIZE_M)
     offs_n = tl.arange(0, BLOCK_SIZE_N)
-    offs_d = tl.arange(0, BLOCK_SIZE_D)
+    offs_d = tl.arange(0, HEAD_DIM)
     mask_m = offs_m < seq_len
     q_ptrs = (
         q_ptr
@@ -631,7 +631,7 @@ def flash_attn_bwd_dq_kernel(
     delta_ptrs = delta_ptr + off_b * stride_db + off_h * stride_dh + offs_m * stride_dm
 
     # Initialize dQ
-    dq = tl.zeros([BLOCK_SIZE_M, BLOCK_SIZE_D], dtype=tl.float32)
+    dq = tl.zeros([BLOCK_SIZE_M, HEAD_DIM], dtype=tl.float32)
 
     # Load Q, dO, LSE (= M + log(L)), Δ (= sum(dO * O))
     q = tl.load(q_ptrs, mask=mask_m[:, None], other=0.0)
@@ -755,7 +755,7 @@ class TritonFlashAttention(torch.autograd.Function):
             seq_len,
             num_heads,
             CAUSAL=causal,
-            BLOCK_SIZE_D=head_dim,
+            HEAD_DIM=head_dim,
         )
 
         ctx.batch_size = batch_size
@@ -820,7 +820,7 @@ class TritonFlashAttention(torch.autograd.Function):
             ctx.seq_len,
             ctx.num_heads,
             CAUSAL=ctx.causal,
-            BLOCK_SIZE_D=ctx.head_dim,
+            HEAD_DIM=ctx.head_dim,
             SKIP_DQ=True,
         )
 
@@ -865,7 +865,7 @@ class TritonFlashAttention(torch.autograd.Function):
             ctx.seq_len,
             ctx.num_heads,
             CAUSAL=ctx.causal,
-            BLOCK_SIZE_D=ctx.head_dim,
+            HEAD_DIM=ctx.head_dim,
         )
 
         return dq, dk, dv, None, None, None

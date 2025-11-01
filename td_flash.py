@@ -918,4 +918,4 @@ def main(batch_size, seq_len, num_heads, dim):
 
 
 if __name__ == "__main__":
-    main(batch_size=2, seq_len=1024, num_heads=8, dim=64)
+    main(batch_size=2, seq_len=1077, num_heads=8, dim=64)
