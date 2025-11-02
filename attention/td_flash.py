@@ -140,9 +140,9 @@ def flash_attn_fwd_kernel(
 
     lse_desc = tl.make_tensor_descriptor(
         base=lse_base,
-        shape=[seq_len],  # last dimension is virtual, it is not used
-        strides=[stride_lm],  # last dimension is virtual, it is not used
-        block_shape=[BLOCK_SIZE_M],  # last dimension is virtual, it is not used
+        shape=[seq_len],
+        strides=[stride_lm],
+        block_shape=[BLOCK_SIZE_M],
     )
 
     # Initialize row_max (M) and sum_exp (L)
