@@ -4,6 +4,8 @@ import triton
 import triton.language as tl
 
 NEG_INF = tl.constexpr(-1e6)
+RCP_LN2 = tl.constexpr(1.4426950408889634)
+LN2 = tl.constexpr(0.6931471824645996)
 
 
 @triton.jit
@@ -149,7 +151,7 @@ def flash_attn_fwd_kernel(
     o = tl.zeros([BLOCK_SIZE_M, HEAD_DIM], dtype=tl.float32)
 
     # Scale sm_scale by log_2(e) and use 2^x instead of exp
-    sm_scale = sm_scale * 1.4426950408889634
+    sm_scale = sm_scale * RCP_LN2
 
     # Load Q: it will stay in SRAM throughout
     q = q_desc.load([start_m, 0])
@@ -246,7 +248,7 @@ def _attn_bwd_loop(
 
         if not SKIP_DQ:
             # Update dQ <- dQ + dS @ K by atomic_add
-            dqT = tl.dot(k.T, dsT.to(k.type.element_ty)) * 0.6931471824645996
+            dqT = tl.dot(k.T, dsT.to(k.type.element_ty)) * LN2
             dq_desc.atomic_add([start_m, 0], dqT)
 
         # Update dK <- dK + dS^T @ Q
@@ -393,7 +395,7 @@ def flash_attn_bwd_kernel(
     # Load K and V
     k = k_desc.load([start_n, 0])
     v = v_desc.load([start_n, 0])
-    k = (k * (sm_scale * 1.4426950408889634)).to(k_ptr.type.element_ty)
+    k = (k * (sm_scale * RCP_LN2)).to(k_ptr.type.element_ty)
 
     q_idx = tl.arange(0, BLOCK_SIZE_M)
     kv_idx = start_n + tl.arange(0, BLOCK_SIZE_N)
@@ -629,7 +631,7 @@ def flash_attn_bwd_dq_kernel(
     do = do_desc.load([start_m, 0])
     lse = lse_desc.load([start_m])
     delta = delta_desc.load([start_m])
-    q = (q * (sm_scale * 1.4426950408889634)).to(q_ptr.type.element_ty)
+    q = (q * (sm_scale * RCP_LN2)).to(q_ptr.type.element_ty)
 
     q_idx = start_m + tl.arange(0, BLOCK_SIZE_M)
 

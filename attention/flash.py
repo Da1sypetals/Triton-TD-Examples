@@ -3,6 +3,10 @@ import torch
 import triton
 import triton.language as tl
 
+NEG_INF = tl.constexpr(-1e6)
+RCP_LN2 = tl.constexpr(1.4426950408889634)
+LN2 = tl.constexpr(0.6931471824645996)
+
 
 @triton.jit
 def _attn_fwd_loop(
@@ -36,9 +40,9 @@ def _attn_fwd_loop(
         s = tl.dot(q, k.T)
         if CAUSAL:
             causal_mask = offs_m[:, None] >= start_n + offs_n[None, :]
-            s = tl.where(causal_mask, s, float("-inf"))
+            s = tl.where(causal_mask, s, NEG_INF)
         elif MASK_N:
-            s = tl.where(mask_n[None, :], s, float("-inf"))
+            s = tl.where(mask_n[None, :], s, NEG_INF)
 
         # Calc new row max M' <- max(M, max(s)), P <- exp(S - M'), local sum exp L1 <- sum(P)
         m_new = tl.maximum(m, tl.max(s, 1))
@@ -144,7 +148,7 @@ def flash_attn_fwd_kernel(
     o = tl.zeros([BLOCK_SIZE_M, HEAD_DIM], dtype=tl.float32)
 
     # Scale sm_scale by log_2(e) and use 2^x instead of exp
-    sm_scale = sm_scale * 1.4426950408889634
+    sm_scale = sm_scale * RCP_LN2
 
     # Load Q: it will stay in SRAM throughout
     q = tl.load(q_ptrs, mask=mask_m[:, None], other=0.0)
@@ -237,7 +241,7 @@ def _attn_bwd_loop(
             mask_m = start_m + offs_m < end
             q = tl.load(q_ptrs + start_m * stride_qm, mask=mask_m[:, None], other=0.0)
             do = tl.load(do_ptrs + start_m * stride_om, mask=mask_m[:, None], other=0.0)
-            lse = tl.load(lse_ptrs + start_m * stride_lm, mask=mask_m, other=float("-inf"))
+            lse = tl.load(lse_ptrs + start_m * stride_lm, mask=mask_m, other=NEG_INF)
             delta = tl.load(delta_ptrs + start_m * stride_dm, mask=mask_m, other=0.0)
         else:
             q = tl.load(q_ptrs + start_m * stride_qm)
@@ -263,7 +267,7 @@ def _attn_bwd_loop(
 
         if not SKIP_DQ:
             # Update dQ <- dQ + dS @ K by atomic_add
-            dqT = tl.dot(k.T, dsT.to(k.type.element_ty)) * 0.6931471824645996
+            dqT = tl.dot(k.T, dsT.to(k.type.element_ty)) * LN2
             if MASK_M:
                 tl.atomic_add(dq_ptrs + start_m * stride_om, dqT, mask=mask_m[None, :], sem="relaxed")
             else:
@@ -394,7 +398,7 @@ def flash_attn_bwd_kernel(
     # Load K and V
     k = tl.load(k_ptrs, mask=mask_n[:, None], other=0.0)
     v = tl.load(v_ptrs, mask=mask_n[:, None], other=0.0)
-    k = (k * (sm_scale * 1.4426950408889634)).to(k_ptr.type.element_ty)
+    k = (k * (sm_scale * RCP_LN2)).to(k_ptr.type.element_ty)
 
     # Split the main loop into 3 parts
     if CAUSAL:
@@ -638,7 +642,7 @@ def flash_attn_bwd_dq_kernel(
     do = tl.load(do_ptrs, mask=mask_m[:, None], other=0.0)
     lse = tl.load(lse_ptrs, mask=mask_m, other=0.0)
     delta = tl.load(delta_ptrs, mask=mask_m, other=0.0)
-    q = (q * (sm_scale * 1.4426950408889634)).to(q_ptr.type.element_ty)
+    q = (q * (sm_scale * RCP_LN2)).to(q_ptr.type.element_ty)
 
     # Split the main loop into 3 parts
     if CAUSAL:
